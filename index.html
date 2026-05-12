@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BLE Wi-Fi &amp; IP App</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+
+        button {
+            padding: 10px 15px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            background-color: #f0f0f0;
+        }
+
+        #ipAddressDisplay {
+            font-weight: bold;
+            color: blue;
+        }
+    </style>
+</head>
+<body>
+    <h1>BLE Wi-Fi &amp; IP App</h1>
+    <p>対象デバイス名: <span id="deviceName"></span></p>
+    <p>送信SSID: <span id="defaultSsid"></span></p>
+    <p>送信PASSWORD: <span id="defaultPassword"></span></p>
+
+    <button id="sendWifiBtn">Wi-Fi情報送信</button>
+    <button id="receiveIpBtn">IPアドレス受信</button>
+
+    <div id="status">
+        <p>接続ステータス: <span id="connectionStatus"></span></p>
+        <p>受信IPアドレス: <span id="ipAddressDisplay"></span></p>
+    </div>
+
+    <script>
+        let device;
+        let server;
+        let service;
+        let wifiChar;
+        let ipChar;
+
+        // IMPORTANT: These UUIDs must be replaced with the actual UUIDs of your BLE device's service and characteristics.
+        const SERVICE_UUID = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+        const WIFI_CHAR_UUID = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+        const IP_CHAR_UUID = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+
+        // デフォルトのデバイス名、SSID、PASSWORD
+        const DEFAULT_DEVICE_NAME = "OMOCHIM";
+        const DEFAULT_SSID = "OmochimStation";
+        const DEFAULT_PASSWORD = "00000000";
+
+        const connectionStatusSpan = document.getElementById("connectionStatus");
+        const ipAddressDisplaySpan = document.getElementById("ipAddressDisplay");
+
+        function updateConnectionStatus(status) {
+            connectionStatusSpan.textContent = status;
+        }
+
+        async function connect() {
+            updateConnectionStatus("デバイスを検索し、接続中...");
+            try {
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: DEFAULT_DEVICE_NAME }],
+                    optionalServices: [SERVICE_UUID]
+                });
+                device.addEventListener("gattserverdisconnected", () => {
+                    console.log("Bluetooth disconnected by device");
+                    updateConnectionStatus("デバイスとの接続が切れました");
+                });
+                server = await device.gatt.connect();
+                service = await server.getPrimaryService(SERVICE_UUID);
+                wifiChar = await service.getCharacteristic(WIFI_CHAR_UUID);
+                ipChar = await service.getCharacteristic(IP_CHAR_UUID);
+
+                console.log("Connected to " + DEFAULT_DEVICE_NAME);
+                updateConnectionStatus("接続済み");
+                return true;
+            } catch (error) {
+                console.error("接続エラー:", error);
+                updateConnectionStatus("接続失敗: " + error.message);
+                return false;
+            }
+        }
+
+        async function sendWifi(ssid, password) {
+            if (!wifiChar) {
+                console.error("Wi-Fi Characteristicが利用できません。まず接続してください。");
+                updateConnectionStatus("Wi-Fiキャラクタリスティックなし");
+                return;
+            }
+            try {
+                const payload = JSON.stringify({ ssid, password });
+                const data = new TextEncoder().encode(payload);
+                await wifiChar.writeValue(data);
+
+                console.log("Wi-Fi情報送信済み:", { ssid, password });
+                updateConnectionStatus("Wi-Fi情報送信完了");
+            } catch (error) {
+                console.error("Wi-Fi情報送信エラー:", error);
+                updateConnectionStatus("Wi-Fi情報送信失敗: " + error.message);
+            }
+        }
+
+        async function reconnectAndReadIp() {
+            ipAddressDisplaySpan.textContent = "受信中...";
+            updateConnectionStatus("IPアドレス受信準備中...");
+            try {
+                if (!device || !device.gatt.connected) {
+                    const connected = await connect();
+                    if (!connected) {
+                        return;
+                    }
+                }
+                if (!ipChar) {
+                    console.error("IP Characteristicが利用できません。");
+                    updateConnectionStatus("IPキャラクタリスティックなし");
+                    return;
+                }
+                const value = await ipChar.readValue();
+                const ip = new TextDecoder().decode(value);
+
+                console.log("受信したIPアドレス:", ip);
+                ipAddressDisplaySpan.textContent = ip;
+                updateConnectionStatus("IPアドレス受信完了");
+            } catch (error) {
+                console.error("IPアドレス受信エラー:", error);
+                ipAddressDisplaySpan.textContent = "受信失敗";
+                updateConnectionStatus("IPアドレス受信失敗: " + error.message);
+            }
+        }
+
+        document.getElementById("sendWifiBtn").addEventListener("click", async () => {
+            if (!device || !device.gatt.connected) {
+                const connected = await connect();
+                if (!connected) return;
+            }
+            await sendWifi(DEFAULT_SSID, DEFAULT_PASSWORD);
+        });
+
+        document.getElementById("receiveIpBtn").addEventListener("click", async () => {
+            await reconnectAndReadIp();
+        });
+
+        document.getElementById("deviceName").textContent = DEFAULT_DEVICE_NAME;
+        document.getElementById("defaultSsid").textContent = DEFAULT_SSID;
+        document.getElementById("defaultPassword").textContent = DEFAULT_PASSWORD;
+
+        updateConnectionStatus("未接続");
+        ipAddressDisplaySpan.textContent = "N/A";
+    </script>
+</body>
+</html>
