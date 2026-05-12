@@ -28,6 +28,11 @@
             font-weight: bold;
             color: blue;
         }
+
+        #portNumberDisplay { /* ポート番号表示用に新しく追加 */
+            font-weight: bold;
+            color: green;
+        }
     </style>
 </head>
 <body>
@@ -37,24 +42,29 @@
     <p>送信PASSWORD: <span id="defaultPassword"></span></p>
 
     <button id="sendWifiBtn">Wi-Fi情報送信</button>
-    <button id="receiveIpBtn">IPアドレス受信</button>
+    <button id="receiveIpBtn">IPアドレス/ポート番号受信</button>
 
     <div id="status">
         <p>接続ステータス: <span id="connectionStatus"></span></p>
         <p>受信IPアドレス: <span id="ipAddressDisplay"></span></p>
+        <p>受信ポート番号: <span id="portNumberDisplay"></span></p> <!-- ポート番号表示用の要素を追加 -->
     </div>
 
     <script>
         let device;
         let server;
         let service;
-        let wifiChar;
-        let ipChar;
+        let ssidChar; // Wi-Fi SSID送信用のCharacteristic
+        let passChar; // Wi-Fi Password送信用のCharacteristic
+        let ipChar; // IPアドレス通知用のCharacteristic (コメントアウトを解除)
+        let portChar; // ポート番号通知用のCharacteristic (新しく追加)
 
         // IMPORTANT: These UUIDs must be replaced with the actual UUIDs of your BLE device's service and characteristics.
-        const SERVICE_UUID = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-        const WIFI_CHAR_UUID = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
-        const IP_CHAR_UUID = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+        const SERVICE_UUID = "12345678-1234-1234-1234-1234567890ab";
+        const SSID_CHAR_UUID = "abcdefab-1234-5678-9abc-abcdefabcdef"; // C++コードのCHARACTERISTIC_SSIDに対応
+        const PASS_CHAR_UUID = "abcdefac-1234-5678-9abc-abcdefabcdef"; // C++コードのCHARACTERISTIC_PASSに対応
+        const IP_CHAR_UUID = "abcdefad-1234-5678-9abc-abcdefabcdef"; // C++コードのCHARACTERISTIC_IPに対応 (コメントアウトを解除)
+        const PORT_CHAR_UUID = "abcdefae-1234-5678-9abc-abcdefabcdef"; // C++コードのCHARACTERISTIC_PORTに対応 (新しく追加)
 
         // デフォルトのデバイス名、SSID、PASSWORD
         const DEFAULT_DEVICE_NAME = "OMOCHIM";
@@ -63,6 +73,7 @@
 
         const connectionStatusSpan = document.getElementById("connectionStatus");
         const ipAddressDisplaySpan = document.getElementById("ipAddressDisplay");
+        const portNumberDisplaySpan = document.getElementById("portNumberDisplay"); // ポート番号表示用の要素を取得
 
         function updateConnectionStatus(status) {
             connectionStatusSpan.textContent = status;
@@ -81,8 +92,14 @@
                 });
                 server = await device.gatt.connect();
                 service = await server.getPrimaryService(SERVICE_UUID);
-                wifiChar = await service.getCharacteristic(WIFI_CHAR_UUID);
+                
+                // SSIDとPasswordのCharacteristicを取得
+                ssidChar = await service.getCharacteristic(SSID_CHAR_UUID);
+                passChar = await service.getCharacteristic(PASS_CHAR_UUID);
+                
+                // IPアドレスとポート番号のCharacteristicを取得 (コメントアウトを解除/追加)
                 ipChar = await service.getCharacteristic(IP_CHAR_UUID);
+                portChar = await service.getCharacteristic(PORT_CHAR_UUID);
 
                 console.log("Connected to " + DEFAULT_DEVICE_NAME);
                 updateConnectionStatus("接続済み");
@@ -95,17 +112,24 @@
         }
 
         async function sendWifi(ssid, password) {
-            if (!wifiChar) {
-                console.error("Wi-Fi Characteristicが利用できません。まず接続してください。");
-                updateConnectionStatus("Wi-Fiキャラクタリスティックなし");
+            // SSIDとPasswordの両方のCharacteristicが利用可能か確認
+            if (!ssidChar || !passChar) {
+                console.error("SSIDまたはPassword Characteristicが利用できません。まず接続してください。");
+                updateConnectionStatus("SSID/Passwordキャラクタリスティックなし");
                 return;
             }
             try {
-                const payload = JSON.stringify({ ssid, password });
-                const data = new TextEncoder().encode(payload);
-                await wifiChar.writeValue(data);
+                // SSIDを個別のCharacteristicに送信
+                const ssidData = new TextEncoder().encode(ssid);
+                await ssidChar.writeValue(ssidData);
+                console.log("SSID送信済み:", ssid);
 
-                console.log("Wi-Fi情報送信済み:", { ssid, password });
+                // Passwordを個別のCharacteristicに送信
+                const passData = new TextEncoder().encode(password);
+                await passChar.writeValue(passData);
+                console.log("Password送信済み:", password);
+
+                console.log("Wi-Fi情報送信完了:", { ssid, password });
                 updateConnectionStatus("Wi-Fi情報送信完了");
             } catch (error) {
                 console.error("Wi-Fi情報送信エラー:", error);
@@ -113,9 +137,11 @@
             }
         }
 
+        // IPアドレスとポート番号受信機能 (コメントアウトを解除し、ポート番号の処理を追加)
         async function reconnectAndReadIp() {
             ipAddressDisplaySpan.textContent = "受信中...";
-            updateConnectionStatus("IPアドレス受信準備中...");
+            portNumberDisplaySpan.textContent = "受信中..."; // ポート番号も受信中に設定
+            updateConnectionStatus("IPアドレスとポート番号受信準備中...");
             try {
                 if (!device || !device.gatt.connected) {
                     const connected = await connect();
@@ -123,21 +149,31 @@
                         return;
                     }
                 }
-                if (!ipChar) {
-                    console.error("IP Characteristicが利用できません。");
-                    updateConnectionStatus("IPキャラクタリスティックなし");
+                // IPとPortのCharacteristicが利用可能か確認
+                if (!ipChar || !portChar) {
+                    console.error("IPまたはPort Characteristicが利用できません。");
+                    updateConnectionStatus("IP/Portキャラクタリスティックなし");
                     return;
                 }
-                const value = await ipChar.readValue();
-                const ip = new TextDecoder().decode(value);
+                
+                // IPアドレスの読み取り
+                const ipValue = await ipChar.readValue();
+                const ip = new TextDecoder().decode(ipValue);
+
+                // ポート番号の読み取り
+                const portValue = await portChar.readValue();
+                const port = new TextDecoder().decode(portValue);
 
                 console.log("受信したIPアドレス:", ip);
+                console.log("受信したポート番号:", port); // ポート番号をログに出力
                 ipAddressDisplaySpan.textContent = ip;
-                updateConnectionStatus("IPアドレス受信完了");
+                portNumberDisplaySpan.textContent = port; // ポート番号を画面に表示
+                updateConnectionStatus("IPアドレスとポート番号受信完了");
             } catch (error) {
-                console.error("IPアドレス受信エラー:", error);
+                console.error("IPアドレスまたはポート番号受信エラー:", error);
                 ipAddressDisplaySpan.textContent = "受信失敗";
-                updateConnectionStatus("IPアドレス受信失敗: " + error.message);
+                portNumberDisplaySpan.textContent = "受信失敗"; // ポート番号も受信失敗に設定
+                updateConnectionStatus("IPアドレスとポート番号受信失敗: " + error.message);
             }
         }
 
@@ -149,6 +185,7 @@
             await sendWifi(DEFAULT_SSID, DEFAULT_PASSWORD);
         });
 
+        // IPアドレス/ポート番号受信ボタンのイベントリスナー (コメントアウトを解除)
         document.getElementById("receiveIpBtn").addEventListener("click", async () => {
             await reconnectAndReadIp();
         });
@@ -159,6 +196,7 @@
 
         updateConnectionStatus("未接続");
         ipAddressDisplaySpan.textContent = "N/A";
+        portNumberDisplaySpan.textContent = "N/A"; // ポート番号の初期表示を設定
     </script>
 </body>
 </html>
