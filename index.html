@@ -158,54 +158,37 @@
         }
 
         // IPアドレスとポート番号受信機能 (コメントアウトを解除し、ポート番号の処理を追加)
-        async function reconnectAndReadIp() 
-        { 
+        async function reconnectAndReadIp() {
             ipAddressDisplaySpan.textContent = "受信中...";
-            portNumberDisplaySpan.textContent = "受信中..."; // ポート番号も受信中に設定 
-            updateConnectionStatus("IPアドレスとポート番号受信準備中..."); 
-            try 
-            { 
-                if (!device || !device.gatt.connected) 
-                { 
+            portNumberDisplaySpan.textContent = "受信中...";
+            updateConnectionStatus("IPアドレスとポート番号通知待ち...");
+        
+            try {
+                if (!device || !device.gatt.connected) {
                     const connected = await connect();
-                    if (!connected) 
-                    { 
-                        return; 
-                    } 
-                } 
-                // IPとPortのCharacteristicが利用可能か確認 
-                if (!ipChar || !portChar) 
-                { 
-                    console.error("IPまたはPort Characteristicが利用できません。"); 
-                    updateConnectionStatus("IP/Portキャラクタリスティックなし"); 
-                    return; 
-                } 
-                // IPアドレスの読み取り 
-                const ipValue = await ipChar.readValue(); 
-                const ip = new TextDecoder().decode(ipValue); 
-                // ポート番号の読み取り 
-                const portValue = await portChar.readValue(); 
-                const port = new TextDecoder().decode(portValue); 
-                console.log("受信したIPアドレス:", ip); 
-                console.log("受信したポート番号:", port); // ポート番号をログに出力 
-                
-                ipAddressDisplaySpan.textContent = ip; 
-                portNumberDisplaySpan.textContent = port; // ポート番号を画面に表示 
-                
-                updateConnectionStatus("IPアドレスとポート番号受信完了"); 
-            } 
-            catch (error) 
-            { 
-                console.error("IPアドレスまたはポート番号受信エラー:", error); 
-                ipAddressDisplaySpan.textContent = "受信失敗"; 
-                portNumberDisplaySpan.textContent = "受信失敗"; // ポート番号も受信失敗に設定 
-                let errorMessage = "IPアドレスとポート番号受信失敗: " + error.message; 
-                if (error.message === "GATT operation not permitted.") 
-                { 
-                    errorMessage += "。デバイス側のIPアドレスとポート番号のCharacteristicに'読み取り (read)'プロパティが設定されているか確認してください。"; 
-                } 
-                updateConnectionStatus(errorMessage); 
-            } 
+                    if (!connected) return;
+                }
+        
+                await ipChar.startNotifications();
+                ipChar.addEventListener("characteristicvaluechanged", (event) => {
+                    const ip = new TextDecoder().decode(event.target.value);
+                    console.log("通知されたIP:", ip);
+                    ipAddressDisplaySpan.textContent = ip;
+                });
+        
+                await portChar.startNotifications();
+                portChar.addEventListener("characteristicvaluechanged", (event) => {
+                    const port = new TextDecoder().decode(event.target.value);
+                    console.log("通知されたポート:", port);
+                    portNumberDisplaySpan.textContent = port;
+                });
+        
+                updateConnectionStatus("通知待機中");
+        
+            } catch (error) {
+                console.error("IP/Port通知受信エラー:", error);
+                updateConnectionStatus("IP/Port通知受信失敗: " + error.message);
+            }
         }
 
         document.getElementById("sendWifiBtn").addEventListener("click", async () => {
