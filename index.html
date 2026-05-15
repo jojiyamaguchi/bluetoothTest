@@ -17,6 +17,15 @@
             cursor: pointer;
         }
 
+        input[type="text"], input[type="password"] {
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+            width: 200px; /* 見た目を調整 */
+        }
+
         #status {
             margin-top: 20px;
             padding: 10px;
@@ -37,9 +46,9 @@
 </head>
 <body>
     <h1>BLE Wi-Fi &amp; IP App</h1>
-    <p>対象デバイス名: <span id="deviceName"></span></p>
-    <p>送信SSID: <span id="defaultSsid"></span></p>
-    <p>送信PASSWORD: <span id="defaultPassword"></span></p>
+    <p>対象デバイス名: <input type="text" id="deviceNameInput"></p>
+    <p>送信SSID: <input type="text" id="ssidInput"></p>
+    <p>送信PASSWORD: <input type="password" id="passwordInput"></p>
 
     <button id="sendWifiBtn">Wi-Fi情報送信</button>
     <button id="receiveIpBtn">IPアドレス/ポート番号受信</button>
@@ -75,6 +84,16 @@
         const ipAddressDisplaySpan = document.getElementById("ipAddressDisplay");
         const portNumberDisplaySpan = document.getElementById("portNumberDisplay"); // ポート番号表示用の要素を取得
 
+        // 入力フィールドの要素を取得
+        const deviceNameInput = document.getElementById("deviceNameInput");
+        const ssidInput = document.getElementById("ssidInput");
+        const passwordInput = document.getElementById("passwordInput");
+
+        // 入力フィールドにデフォルト値を設定
+        deviceNameInput.value = DEFAULT_DEVICE_NAME;
+        ssidInput.value = DEFAULT_SSID;
+        passwordInput.value = DEFAULT_PASSWORD;
+
         function updateConnectionStatus(status) {
             connectionStatusSpan.textContent = status;
         }
@@ -83,7 +102,8 @@
             updateConnectionStatus("デバイスを検索し、接続中...");
             try {
                 device = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: DEFAULT_DEVICE_NAME }],
+                    // デバイス名は入力フィールドの値を使用
+                    filters: [{ namePrefix: deviceNameInput.value }],
                     optionalServices: [SERVICE_UUID]
                 });
                 device.addEventListener("gattserverdisconnected", () => {
@@ -101,7 +121,7 @@
                 ipChar = await service.getCharacteristic(IP_CHAR_UUID);
                 portChar = await service.getCharacteristic(PORT_CHAR_UUID);
 
-                console.log("Connected to " + DEFAULT_DEVICE_NAME);
+                console.log("Connected to " + deviceNameInput.value);
                 updateConnectionStatus("接続済み");
                 return true;
             } catch (error) {
@@ -134,7 +154,7 @@
             } catch (error) {
                 console.error("Wi-Fi情報送信エラー:", error);
                 updateConnectionStatus("Wi-Fi情報送信失敗: " + error.message);
-            }
+            }コツ
         }
 
         // IPアドレスとポート番号受信機能 (コメントアウトを解除し、ポート番号の処理を追加)
@@ -173,7 +193,12 @@
                 console.error("IPアドレスまたはポート番号受信エラー:", error);
                 ipAddressDisplaySpan.textContent = "受信失敗";
                 portNumberDisplaySpan.textContent = "受信失敗"; // ポート番号も受信失敗に設定
-                updateConnectionStatus("IPアドレスとポート番号受信失敗: " + error.message);
+                
+                let errorMessage = "IPアドレスとポート番号受信失敗: " + error.message;
+                if (error.message === "GATT operation not permitted.") {
+                    errorMessage += "。デバイス側のIPアドレスとポート番号のCharacteristicに'読み取り (read)'プロパティが設定されているか確認してください。";
+                }
+                updateConnectionStatus(errorMessage);
             }
         }
 
@@ -182,7 +207,8 @@
                 const connected = await connect();
                 if (!connected) return;
             }
-            await sendWifi(DEFAULT_SSID, DEFAULT_PASSWORD);
+            // Wi-Fi情報送信時に入力フィールドの値を使用
+            await sendWifi(ssidInput.value, passwordInput.value);
         });
 
         // IPアドレス/ポート番号受信ボタンのイベントリスナー (コメントアウトを解除)
@@ -190,10 +216,7 @@
             await reconnectAndReadIp();
         });
 
-        document.getElementById("deviceName").textContent = DEFAULT_DEVICE_NAME;
-        document.getElementById("defaultSsid").textContent = DEFAULT_SSID;
-        document.getElementById("defaultPassword").textContent = DEFAULT_PASSWORD;
-
+        // 初期表示設定（入力フィールドのデフォルト値はスクリプトの冒頭で設定済み）
         updateConnectionStatus("未接続");
         ipAddressDisplaySpan.textContent = "N/A";
         portNumberDisplaySpan.textContent = "N/A"; // ポート番号の初期表示を設定
